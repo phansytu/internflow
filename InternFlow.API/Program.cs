@@ -20,6 +20,18 @@ try
         .ReadFrom.Services(services)
         .Enrich.FromLogContext(),
         preserveStaticLogger: true);
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("AllowFrontend", policy =>
+        {
+            policy.WithOrigins(
+                    "http://localhost:5173", 
+                    "http://localhost:3000")  
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        });
+    });
 
     // Add services to the container.
     builder.Services
@@ -78,9 +90,19 @@ try
     builder.Services.AddProjectServices(builder.Configuration);
 
     // 2. Cấu hình JWT Authentication
-    var jwtSecret = builder.Configuration["Jwt:Secret"]
-                    ?? builder.Configuration["Jwt:Key"]
-                    ?? "InternFlow_Super_Secret_Jwt_Signing_Key_For_Identity_Auth_2026!";
+   var jwtSecret = builder.Configuration["Jwt:Secret"];
+
+if (string.IsNullOrWhiteSpace(jwtSecret))
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        jwtSecret = "InternFlow_Dev_Only_Secret_Key_Min_32_Chars_Long!";
+    }
+    else
+    {
+        throw new InvalidOperationException("Jwt:Secret chưa được cấu hình.");
+    }
+}
     var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "InternFlow";
     var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "InternFlowClient";
 
@@ -114,6 +136,7 @@ try
     app.UseMiddleware<TraceIdMiddleware>();
     app.UseMiddleware<ExceptionHandlingMiddleware>();
     app.UseSerilogRequestLogging();
+    app.UseCors("AllowFrontend");   
 
     if (app.Environment.IsDevelopment())
     {

@@ -3,11 +3,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime   
     container_name: internflow-api
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: "http://+:8080"
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=${DB_NAME};User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Secret: "${JWT_SECRET}"
@@ -22,15 +25,29 @@ services:
       - internflow-net
     volumes:
       - ./logs:/app/logs
-
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: internflow-sqlserver
+    restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${SA_PASSWORD:-Dev@12345678}"
-
+      MSSQL_SA_PASSWORD: "${SA_PASSWORD}"
+      MSSQL_PID: "Developer"  
     ports:
       - "1433:1433"
     volumes:
@@ -40,15 +57,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 20s
+      start_period: 30s
     networks:
       - internflow-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   redis:
     image: redis:7-alpine
     container_name: internflow-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning  
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data                        
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -56,9 +85,17 @@ services:
       retries: 5
     networks:
       - internflow-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
 volumes:
   sqlserver-data:
+    driver: local
+  redis-data:
+    driver: local
 
 networks:
   internflow-net:
